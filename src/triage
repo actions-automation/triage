@@ -103,8 +103,12 @@ def triage():
             id=id,
             cursors={
                 'projectCardsCursor': ["node", "projectCards"],
-                'projectsCursor': ["node", "repository", "owner", "projects"],
-                'columnCursor': ["columns"]
+                'projectsCursor': {
+                    'path': ["node", "repository", "owner", "projects"],
+                    'next': {
+                        'columnCursor': ["columns"]
+                    }
+                }
             },
         )
     except githubgql.TokenError as e:
