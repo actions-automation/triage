@@ -1,0 +1,162 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: Apache-2.0
+
+from githubgql import githubgql
+
+import json
+import sys
+import os
+
+QUERY = """
+query($id:ID!, $projectCardsCursor:String, $projectsCursor:String, $columnsCursor:String) {
+    node(id:$id) {
+        ... on PullRequest {
+            repository {
+                owner {
+                    ...organizationData
+                }
+            }
+            number
+            projectCards(first:100, archivedStates:NOT_ARCHIVED, after:$projectCardsCursor) {
+                pageInfo { endCursor hasNextPage }
+                nodes {
+                    id
+                    column {
+                        id
+                        name
+                        project {
+                            id
+                            name
+                        }
+                    }
+                }
+            }
+        }
+        ... on Issue {
+            repository {
+                owner {
+                    ...organizationData
+                }
+            }
+            number
+            projectCards(first:100, archivedStates:NOT_ARCHIVED, after:$projectCardsCursor) {
+                pageInfo { endCursor hasNextPage }
+                nodes {
+                    id
+                    column {
+                        id
+                        name
+                        project {
+                            id
+                            name
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fragment organizationData on Organization {
+    projects(first:100, after:$projectsCursor) {
+        pageInfo { endCursor hasNextPage }
+        nodes {
+            name
+            id
+            columns(first:100, after:$columnsCursor) {
+                pageInfo { endCursor hasNextPage }
+                nodes {
+                    name
+                    id
+                }
+            }
+        }
+    }
+}
+"""
+
+MUTATION = """
+mutation($input:AddProjectCardInput!) {
+    addProjectCard(input:$input) {
+        clientMutationId
+    }
+}
+"""
+
+def triage():
+    target_project, target_column = sys.argv[1].split("/")
+    owner, repo = os.environ["GITHUB_REPOSITORY"].split("/")
+
+    with open(os.environ["GITHUB_EVENT_PATH"]) as f:
+        event = json.load(f)
+
+    if event["action"] not in {"opened", "reopened"}:
+        sys.exit(0)
+
+    id = event.get('pull_request', event.get('issue'))
+    id = id['node_id']
+
+    # Fetch data from Github about the issue/PR.
+    try:
+        result = githubgql.graphql(
+            QUERY,
+            id=id,
+            cursors={
+                'projectCardsCursor': ["node", "projectCards"],
+                'projectsCursor': ["node", "repository", "owner", "projects"],
+                'columnCursor': ["columns"]
+            },
+        )
+    except githubgql.TokenError as e:
+        print(e.error)
+        sys.exit(0)
+
+    # Find out what projects the issue/PR is in.
+    node_cards = result["node"]["projectCards"]["nodes"]
+    node_projects = {card["column"]["project"]["id"] for card in node_cards}
+    
+    # Extract the node IDs of the columns we want to add the issue/PR to.
+    projects = result["node"]["repository"]["owner"]["projects"]["nodes"]
+    target_project_data = [p for p in projects if p["name"] == target_project]
+    if len(target_project_data) == 0:
+        print(f"""
+The project {target_project} doesn't seem to exist; aborting.
+        """)
+        sys.exit(1)
+    target_project_id = target_project_data[0]["id"]
+    target_column_data = [c for c in target_project_data["columns"]["nodes"] if c["name"] == target_column]
+    if len(target_column_data) == 0:
+        print(f"""
+The column {target_column} doesn't seem to exist; aborting.
+        """)
+        sys.exit(1)
+    target_column_id = target_column_data[0]["id"]
+    
+
+    # If the issue/PR isn't in the Planning project, add it to Triage.
+    if target_project_id not in node_projects:
+        # Print status.
+        print(f"Adding {owner}/{repo}#{result['node']['number']} to {target_column}")
+
+        # Add the content to the project.
+        try:
+            githubgql.graphql(
+                MUTATION,
+                input={
+                    "projectColumnId": target_column_id,
+                    "contentId": id
+                }
+            )
+        except githubgql.GraphQLError as e:
+            if e.errors[0]["message"] != "Project already has the associated issue":
+                raise
+            print(f"Project already has this card. Skipping addition.")
+
+def main():
+    if os.environ["GITHUB_EVENT_NAME"] not in ["pull_request_target", "issues"]:
+        sys.exit(0)
+
+    triage()
+
+if __name__ == "__main__":
+    main()
