@@ -1,0 +1,32 @@
+name: triage
+
+on:
+  issues:
+  pull_request_target:
+    types:
+      - assigned
+      - unassigned
+      - labeled
+      - unlabeled
+      - opened
+      - edited
+      - closed
+      - reopened
+      - synchronize
+      - ready_for_review
+      - locked
+      - unlocked
+      - review_requested
+      - review_request_removed
+  workflow_dispatch:
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+    name: triage
+    steps:
+      - uses: actions-automation/triage@main
+        with:
+          project_column: "Test Project/To do"
