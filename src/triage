@@ -128,7 +128,7 @@ The project {target_project} doesn't seem to exist; aborting.
         """)
         sys.exit(1)
     target_project_id = target_project_data[0]["id"]
-    target_column_data = [c for c in target_project_data["columns"]["nodes"] if c["name"] == target_column]
+    target_column_data = [c for c in target_project_data[0]["columns"]["nodes"] if c["name"] == target_column]
     if len(target_column_data) == 0:
         print(f"""
 The column {target_column} doesn't seem to exist; aborting.
