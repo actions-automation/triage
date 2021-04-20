@@ -96,10 +96,13 @@ def triage():
     id = event.get('pull_request', event.get('issue'))
     id = id['node_id']
 
+    token = os.environ.get('BOT_TOKEN', None)
+
     # Fetch data from Github about the issue/PR.
     try:
         result = githubgql.graphql(
             QUERY,
+            token=token,
             id=id,
             cursors={
                 'projectCardsCursor': ["node", "projectCards"],
@@ -146,6 +149,7 @@ The column {target_column} doesn't seem to exist; aborting.
         try:
             githubgql.graphql(
                 MUTATION,
+                token=token,
                 input={
                     "projectColumnId": target_column_id,
                     "contentId": id
